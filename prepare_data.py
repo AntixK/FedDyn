@@ -31,7 +31,8 @@ class dataPrep:
 
             transform = transforms.Compose([
                 transforms.ToTensor(),
-                transforms.Normalize((0.1307,), (0.3081,))
+                transforms.Normalize((0.1307,), (0.3081,)),
+                # transforms.Lambda(lambda x: torch.flatten(x,start_dim=1).squeeze())
             ])
 
             self.train_data = datasets.MNIST(root_dir / "raw/",
@@ -85,7 +86,7 @@ class dataPrep:
             if not isinstance(self.train_data.targets, torch.Tensor):
                 self.train_data.targets = torch.tensor(self.train_data.targets)
 
-            pbar = tqdm(range(num_clients), desc = f"{self.dataset_name} Non-IID Unbalanced: ")
+            pbar = tqdm(range(num_clients), desc = f"{self.dataset_name} IID: ")
             for i in pbar:
                 client_path = Path(client_data_path / str(i))
                 client_path.mkdir()
@@ -202,5 +203,11 @@ class dataPrep:
 if __name__ == "__main__":
     # import matplotlib.pyplot as plt
     d = dataPrep("MNIST", root_dir =Path("Data/"))
-    d.make(1, 10, dir_alpha=0.7, lognorm_std=0.0, show_plots=True)
+    d.make(0, 1, dir_alpha=0.7, lognorm_std=0.0, show_plots=False)
+
+    # from torch.utils.data import DataLoader
+    # dir_ = Path("Data/client_data")
+    # data =torch.load(dir_/ "0/data.pth")
+    # dataloader = DataLoader(data, shuffle=True, num_workers=4, batch_size=2)
+    # print(next(iter(dataloader)))
 

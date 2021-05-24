@@ -17,10 +17,11 @@ Downloading datasets through torchvision can be quite slow or can even [fail](ht
 - [x] Add MLP 
 - [x] Add CNN 
 - [ ] Write client side training 
-- [ ] Server side update 
-- [ ] Main FedDyn loop 
-- [ ] Proper communication between server and clients 
-- [ ] Prepare dataset
+- [x] Server side update 
+    - [ ] Update only parameters & not entire state dict?
+- [x] Main FedDyn loop 
+- [x] Proper communication between server and clients 
+- [x] Prepare dataset
     - [x] IID 
     - [x] Non-IID Balanced
     - [x] None-IID Unbalanced
