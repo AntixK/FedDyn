@@ -11,6 +11,8 @@ Downloading datasets through torchvision can be quite slow or can even [fail](ht
 
 ## Results
 
+## Custom Datasets
+
 ## ToDo:
 - [x] Add MLP 
 - [x] Add CNN 
@@ -19,9 +21,10 @@ Downloading datasets through torchvision can be quite slow or can even [fail](ht
 - [ ] Main FedDyn loop 
 - [ ] Proper communication between server and clients 
 - [ ] Prepare dataset
-    - [ ] IID 
-    - [ ] Non-IID
-- [ ] Download datasets 
+    - [x] IID 
+    - [x] Non-IID Balanced
+    - [x] None-IID Unbalanced
+- [x] Download datasets 
 - [ ] Metrics (bits transferred, accuracy etc)
 - [ ] Parallel training 
 
