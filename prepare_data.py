@@ -32,7 +32,7 @@ class dataPrep:
             transform = transforms.Compose([
                 transforms.ToTensor(),
                 transforms.Normalize((0.1307,), (0.3081,)),
-                # transforms.Lambda(lambda x: torch.flatten(x,start_dim=1).squeeze())
+                transforms.Lambda(lambda x: torch.flatten(x,start_dim=1).squeeze())
             ])
 
             self.train_data = datasets.MNIST(root_dir / "raw/",
@@ -77,6 +77,12 @@ class dataPrep:
             shutil.rmtree(self.root_dir / "client_data")
         client_data_path = Path(self.root_dir / "client_data")
         client_data_path.mkdir()
+
+        if not isinstance(self.test_data.targets, torch.Tensor):
+            self.test_data.targets = torch.tensor(self.test_data.targets)
+        test_data = [self.test_data[j] for j in range(len(self.test_data))]
+        torch.save(test_data,
+                   client_data_path / "test_data.pth")
 
         if mode == 0:       # IID
             # Shuffle data
