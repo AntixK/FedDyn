@@ -2,6 +2,9 @@ import torch.nn as nn
 import torch
 import torch.nn.functional as F
 
+__all__ = ['MLP', 'CNN']
+
+
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()

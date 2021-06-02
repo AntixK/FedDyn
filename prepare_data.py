@@ -12,6 +12,7 @@ from torch.distributions import Dirichlet, Categorical, LogNormal
 from typing import List
 plt.style.use('seaborn')
 
+__all__ = ['dataPrep']
 
 class dataPrep:
     def __init__(self,
@@ -209,7 +210,7 @@ class dataPrep:
 if __name__ == "__main__":
     # import matplotlib.pyplot as plt
     d = dataPrep("MNIST", root_dir =Path("Data/"))
-    d.make(0, 1, dir_alpha=0.7, lognorm_std=0.0, show_plots=False)
+    d.make(2, 10, dir_alpha=0.7, lognorm_std=0.0, show_plots=True)
 
     # from torch.utils.data import DataLoader
     # dir_ = Path("Data/client_data")

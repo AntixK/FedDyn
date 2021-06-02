@@ -9,9 +9,12 @@ from tqdm import tqdm
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
+from joblib import Parallel, delayed
+from joblib.externals.loky.backend.context import get_context
 
 plt.style.use('seaborn')
 
+__all__ = ['FedDyn']
 
 class Server:
     def __init__(self,
@@ -91,22 +94,23 @@ class Server:
 
         print(f"\nTest dataset: Average loss: {test_loss:.4f}, Accuracy: {correct}/{total} ({accuracy:.2f}%)\n")
 
-    def _plot_results(self):
+    def _plot_results(self, exp_name: str):
         fig, ax = plt.subplots(figsize=(6, 5))
         ax.plot(self.test_loss_log, lw=2, color='k', label='Test Loss')
-        ax.set_ylabel('Test Loss', fontsize=13, color='k')
+        ax.set_ylabel('Test Loss', fontsize=11, color='k')
 
         ax2 = ax.twinx()
         ax2.plot(self.accuracy_log, lw=2, color='tab:blue', label="Accuracy")
-        ax2.set_ylabel('Accuracy %', fontsize=13, color='tab:blue')
+        ax2.set_ylabel('Accuracy %', fontsize=11, color='tab:blue')
 
-        ax.set_xticks(range(len(self.test_loss_log)))
+        # ax.set_xticks(range(len(self.test_loss_log)))
         # ax.set_xlim([-1, self.num_classes])
-        ax.set_title("Results", fontsize=15)
-        ax.set_xlabel('Rounds', fontsize=13)
+        ax.set_title(f"{exp_name} Results", fontsize=13)
+        ax.set_xlabel('Communication Rounds', fontsize=11)
         plt.tight_layout()
-        plt.savefig("results.png", dpi=200)
+        plt.savefig(f"{exp_name}_results.png", dpi=200)
         # plt.show()
+
 
 class ClientNode:
     def __init__(self,
@@ -127,15 +131,26 @@ class ClientNode:
         self.data_dir = data_dir
         # self.criterion = nn.CrossEntropyLoss()
         self.criterion = nn.NLLLoss()
-        self.optim = Adadelta(self.model.parameters(), lr=self.learning_rate)
+        self.optim = SGD(self.model.parameters(),
+                         lr=self.learning_rate,
+                         weight_decay=1e-4)
 
         self.server_state_dict = None
+
+        self.prev_grads = None
+        for param in self.model.parameters():
+            if not isinstance(self.prev_grads, torch.Tensor):
+                self.prev_grads = torch.zeros_like(param.view(-1))
+            else:
+                self.prev_grads = torch.cat((self.prev_grads, torch.zeros_like(param.view(-1))), dim=0)
+
 
     def gatherData(self) -> None:
         data = torch.load(self.data_dir / self.id / "data.pth")
         self.train_loader = DataLoader(data,
                                        batch_size=self.batch_size,
-                                       shuffle=True, num_workers=4)
+                                       shuffle=True, num_workers=4,
+                                       multiprocessing_context=get_context('loky'))
         print(f"Client {self.id}: Gathered data.")
 
     def receiveMessage(self):
@@ -153,28 +168,51 @@ class ClientNode:
         # print(f"Client {self.id}: Training model...")
 
         self.model.train()
+
         pbar = tqdm(range(num_epochs), desc=f"Client {self.id} Training")
         for epoch in pbar:
             epoch_loss = 0.0
             for data, labels in self.train_loader:
                 # print(labels)
                 self.optim.zero_grad()
-
                 y = self.model(data.cuda())
                 # print(y.shape, labels.shape)
+                epoch_loss = {}
                 loss = self.criterion(y, labels.cuda())
-
-                # Dynamic regularization
-                reg = 0.0
+                epoch_loss['Task Loss'] = loss.item()
+                #=== Dynamic regularization === #
+                # Linear penalty
+                lin_penalty = 0.0
+                curr_params = None
                 for name, param in self.model.named_parameters():
-                    reg += F.mse_loss(param, self.server_state_dict[name], reduction='sum')
+                    if not isinstance(curr_params, torch.Tensor):
+                        curr_params = param.view(-1)
+                    else:
+                        curr_params = torch.cat((curr_params, param.view(-1)), dim=0)
 
-                loss += self.alpha/2.0 * reg
+                lin_penalty = torch.sum(curr_params * self.prev_grads)
+                loss -= lin_penalty
+                epoch_loss['Lin Penalty'] = lin_penalty.item()
 
-                epoch_loss += loss.item()
+                # Quadratic Penalty
+                quad_penalty = 0.0
+                for name, param in self.model.named_parameters():
+                    quad_penalty += F.mse_loss(param, self.server_state_dict[name], reduction='sum')
+
+                loss += self.alpha/2.0 * quad_penalty
+                epoch_loss['Quad Penalty'] = quad_penalty.item()
                 loss.backward()
+
+                # Update the previous gradients
+                self.prev_grads = None
+                for param in self.model.parameters():
+                    if not isinstance(self.prev_grads, torch.Tensor):
+                        self.prev_grads = param.grad.view(-1).clone()
+                    else:
+                        self.prev_grads = torch.cat((self.prev_grads, param.grad.view(-1).clone()), dim=0)
+
                 self.optim.step()
-            pbar.set_postfix({"Loss":epoch_loss/len(self.train_loader)})
+            pbar.set_postfix(epoch_loss) #{"Loss":epoch_loss/len(self.train_loader)})
         self.model.eval()
         # print(f"Client {self.id}: Training done.")
 
@@ -214,16 +252,26 @@ class FedDyn:
                                            id=str(i),
                                            alpha = alpha))
 
+    def _client_run(self, client_id: int, num_epochs: int):
+        self.clients[client_id].receiveMessage()
+        self.clients[client_id].trainModel(num_epochs)
+        self.clients[client_id].sendMessage()
+
     def run(self,
             num_epochs: int,
             num_rounds: int,
-            participation_level: float):
+            participation_level: float,
+            exp_name: str):
 
         assert num_rounds > 0, "num_rounds must be positive."
         if participation_level <= 0 or participation_level > 1.0:
             raise ValueError("participation_level must be in the range (0, 1].")
 
         num_active_clients = int(participation_level*self.num_clients)
+
+        for p_id in range(self.num_clients):
+            self.clients[p_id].gatherData()
+
         for t in range(num_rounds):
             print("="*30)
             print(" "*10 + f"Round {t+1}")
@@ -233,14 +281,12 @@ class FedDyn:
 
             # Send weights to all participants
             self.server.sendMessage()
-            for p_id in participant_ids:
-                self.clients[p_id].gatherData()
 
             # Train the participant models
             for p_id in participant_ids:
-                self.clients[p_id].receiveMessage()
-                self.clients[p_id].trainModel(num_epochs)
-                self.clients[p_id].sendMessage()
+                self._client_run(p_id, num_epochs=num_epochs)
+            # Parallel(n_jobs=self.num_clients)(delayed(self._client_run)(p_id, num_epochs)
+            #                                   for p_id in participant_ids)
 
             # Receive participant models
             self.server.receiveMessage(participant_ids)
@@ -254,7 +300,7 @@ class FedDyn:
             # clean up client tmp folder
             print("="*30)
 
-        self.server._plot_results()
+        self.server._plot_results(exp_name)
 
 if __name__ == "__main__":
     import sys
@@ -263,19 +309,19 @@ if __name__ == "__main__":
     from prepare_data import dataPrep
     import torchvision.datasets as datasets
     import torchvision.transforms as transforms
-
+    #
     # d = dataPrep("MNIST", root_dir =Path("../Data/"))
-    # d.make(0, 10, dir_alpha=0.7, lognorm_std=0.0, show_plots=False)
+    # d.make(1, 10, dir_alpha=0.7, lognorm_std=0.3, show_plots=False)
 
     f = FedDyn(model = MLP().cuda(),
                num_clients = 10,
                data_dir= Path("../Data/client_data"),
                batch_size = 128,
-               learning_rate = 0.003,
-               alpha=0.4)
+               learning_rate = 0.1,
+               alpha=0.01)
 
-    f.run(num_epochs=100,
-          num_rounds=10,
-          participation_level=0.5)
-
+    f.run(num_epochs=50,
+          num_rounds=100,
+          participation_level=0.5,
+          exp_name=r"MNIST 50% Non-IID balanced")
 

@@ -1,0 +1,21 @@
+title = "MNIST data with IID split and 10% partitipation"
+
+[data]
+root_dir = "Data/"
+mode = 0
+num_clients= 10
+show_plots = false
+dir_alpah = 0.7
+lognorm_std=0.0
+
+
+[experiment]
+name = "MNIST"
+data_dir = "Data/client_data"
+batch_size = 128
+learning_rate = 0.01
+alpha = 0.01
+num_epochs=250
+num_rounds=50
+partitipation_level = 0.5
+

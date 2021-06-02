@@ -125,3 +125,8 @@ dmypy.json
 
 Data/
 tmp/
+feddyn/results.png
+
+feddyn/MNIST_50_mode1_results.png
+
+feddyn/MNIST 50% Non-IID Unbalanced_results.png

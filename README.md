@@ -17,6 +17,7 @@ Downloading datasets through torchvision can be quite slow or can even [fail](ht
 - [x] Add MLP 
 - [x] Add CNN 
 - [ ] Write client side training 
+    -[ ] Dynamic regularization
 - [x] Server side update 
     - [ ] Update only parameters & not entire state dict?
 - [x] Main FedDyn loop 
